@@ -1,0 +1,60 @@
+# Ultralytics YOLO 🚀, AGPL-3.0 license
+# RT-DETR-l object detection model with P3-P5 outputs. For details see https://docs.ultralytics.com/models/rtdetr
+
+# ============================================================================
+# FMA1 — 红外小型无人机目标检测改进模型
+# 作者: ZHJ
+# 基线: RT-DETR-l (ultralytics)
+# 改进点:
+#   1. 骨干网络: ADown 低损下采样 + C2f-FAT (多尺度窗口注意力 + 频率调制)
+#   2. 编码器:   AIFI_CAS_att3 (多尺度卷积加法自注意力，替代传统 MHSA)
+#   3. 跨尺度融合: MANet_FasterBlock (快速聚合网络，替代 RepC3)
+# ============================================================================
+
+# Parameters
+nc: 80  # number of classes
+scales: # model compound scaling constants, i.e. 'model=yolov8n-cls.yaml' will call yolov8-cls.yaml with scale 'n'
+  # [depth, width, max_channels]
+  l: [1.00, 1.00, 1024]
+
+# From ZHJ
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]]  # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]]  # 1-P2/4
+  - [-1, 1, C2f, [128]]
+
+  - [-1, 1, ADown, [256]]  # 3-P3/8  ← 改进1a: ADown 分路异构下采样，弱化背景噪声、保留小目标边缘纹理
+  - [-1, 1, C2f_FAT, [256]]  # ← 改进1b: C2f-FAT 多尺度窗口注意力 + 频率调制，增强小目标特征显著性
+
+  - [-1, 1, ADown, [384]]  # 5-P4/16
+  - [-1, 1, C2f_FAT, [384]]
+
+  - [-1, 1, ADown, [384]]  # 7-P5/32
+  - [-1, 3, C2f, [384]]
+
+head:
+  - [-1, 1, Conv, [256, 1, 1, None, 1, 1, False]]  # 9 input_proj.2
+  - [-1, 1, AIFI_CAS_att3, [1024, 8]]  # 10 ← 改进2: MSCAS-AIFI 加法Token混合，替代传统矩阵乘法注意力，O(N)复杂度
+  - [-1, 1, Conv, [256, 1, 1]]  # 11, Y5, lateral_convs.0
+
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']] # 12
+  - [6, 1, Conv, [256, 1, 1, None, 1, 1, False]]  # 13 input_proj.1
+  - [[-2, -1], 1, Concat, [1]] # 14
+  - [-1, 3, MANet_FasterBlock, [256, False, 2, 3]]  # 15, fpn_blocks.0 ← 改进3: FMA 快速聚合网络，多分支特征解耦 + 部分卷积轻量化
+  - [-1, 1, Conv, [256, 1, 1]]   # 16, Y4, lateral_convs.1
+
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']] # 17
+  - [4, 1, Conv, [256, 1, 1, None, 1, 1, False]]  # 18 input_proj.0
+  - [[-2, -1], 1, Concat, [1]]  # 19 cat backbone P4
+  - [-1, 1, MANet_FasterBlock, [128, False, 2, 3]]    # X3 (20), fpn_blocks.1 ← 改进3: FMA
+
+  - [-1, 1, Conv, [256, 3, 2]]   # 21, downsample_convs.0
+  - [[-1, 16], 1, Concat, [1]]  # 22 cat Y4
+  - [-1, 1, MANet_FasterBlock, [256, False, 2, 3]]    # F4 (23), pan_blocks.0 ← 改进3: FMA
+
+  - [-1, 1, Conv, [256, 3, 2]]   # 24, downsample_convs.1
+  - [[-1, 11], 1, Concat, [1]]  # 25 cat Y5
+  - [-1, 1, MANet_FasterBlock, [256, False, 2, 3]]    # F5 (26), pan_blocks.1 ← 改进3: FMA
+
+  - [[20, 23, 26], 1, RTDETRDecoder, [nc, 256, 300, 4, 8, 3]]  # Detect(P3, P4, P5)

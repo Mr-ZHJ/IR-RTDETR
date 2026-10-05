@@ -1,0 +1,13 @@
+# dataset path
+path: D:/Datasets/IRSTD-1k-YOLO
+
+# train, val, test paths
+train: D:/Datasets/IRSTD-1k-YOLO/train
+val: D:/Datasets/IRSTD-1k-YOLO/val
+#test: D:/Datasets/uav410_subset/test
+
+# number of classes
+nc: 1
+
+# class names
+names: ['air']

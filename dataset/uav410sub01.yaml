@@ -1,0 +1,13 @@
+# dataset path
+path: D:/Datasets/uav410_subset
+
+# train, val, test paths
+train: D:/Datasets/uav410_subset/train
+val: D:/Datasets/uav410_subset/valid
+test: D:/Datasets/uav410_subset/test
+
+# number of classes
+nc: 1
+
+# class names
+names: ['uav']
